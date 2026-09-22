@@ -1,66 +1,115 @@
-# main.py — 뇌졸중 예측 실습실: 이 데이터가 무엇인지 소개하는 첫 화면
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import plotly.express as px
 
-st.set_page_config(page_title="뇌졸중 예측 실습실", page_icon="🩺", layout="wide")
-st.title("🩺 뇌졸중 예측 실습실")
-st.write("건강 기록 5,110명분을 읽어 옵니다. 왼쪽 메뉴에서 페이지를 넘기며 들여다보고, 모델을 만들고, 채점합니다.")
-
-데이터주소 = "https://raw.githubusercontent.com/greatsong/modudata/main/data/stroke.csv"
-
-
-@st.cache_data
-def 데이터_읽기():
-    """UTF-8로 저장된 csv를 읽는다. bmi 열의 빈 값은 그대로 빈 값으로 남는다."""
-    return pd.read_csv(데이터주소, encoding="utf-8")
-
-
-df = 데이터_읽기()
-
-st.subheader("한눈에 보기")
-칸1, 칸2, 칸3, 칸4 = st.columns(4)
-칸1.metric("전체 사람 수", f"{len(df):,}명")
-칸2.metric("열 개수", f"{df.shape[1]}개")
-칸3.metric("뇌졸중을 겪은 사람", f"{int(df['stroke'].sum()):,}명")
-칸4.metric("그 비율", f"{df['stroke'].mean() * 100:.2f}%")
-
-st.subheader("열마다 무엇이 들어 있는가")
-st.caption("우리말 뜻 칸은 비어 있습니다. 교재의 열 대응표를 보고 직접 채워 넣으세요. 적은 내용은 저장되지 않습니다.")
-
-
-def 값의_종류(열):
-    """숫자 열은 가장 작은 값과 가장 큰 값을, 글자 열은 값의 가짓수와 실제 값을 적는다."""
-    칸 = df[열].dropna()
-    if pd.api.types.is_numeric_dtype(칸) and 칸.nunique() > 2:
-        return f"숫자 {칸.min():g} ~ {칸.max():g}"
-    값들 = sorted(칸.unique().astype(str))
-    return f"{len(값들)}가지 · " + " · ".join(값들)
-
-
-열설명 = pd.DataFrame({
-    "열 이름": df.columns,
-    "우리말 뜻": [""] * df.shape[1],
-    "값의 종류": [값의_종류(열) for 열 in df.columns],
-    "빈 값 개수": [int(df[열].isna().sum()) for 열 in df.columns],
-})
-st.data_editor(
-    열설명,
-    width="stretch",
-    hide_index=True,
-    disabled=["열 이름", "값의 종류", "빈 값 개수"],   # 우리말 뜻 칸만 고쳐 쓸 수 있다
-    key="열설명표",
+# -----------------------------
+# 페이지 기본 설정 (브라우저 탭 제목, 아이콘, 레이아웃)
+# -----------------------------
+st.set_page_config(
+    page_title="뇌졸중 예측 실습실",
+    page_icon="🧠",
+    layout="wide"
 )
 
-st.subheader("앞 다섯 줄 그대로 보기")
-st.dataframe(df.head(5), width="stretch", hide_index=True)
+# -----------------------------
+# 데이터 불러오기 함수
+# (캐시를 사용해서 매번 새로 다운로드하지 않도록 함)
+# -----------------------------
+@st.cache_data
+def load_data():
+    url = "https://raw.githubusercontent.com/greatsong/modudata/main/data/stroke.csv"
+    df = pd.read_csv(url, encoding="utf-8")
+    return df
 
-st.subheader("이 데이터는 어디서 왔는가")
-출처_기본값 = """출처: 캐글 Stroke Prediction Dataset (게시자 fedesoriano, 2021-01-26 공개)
-원본 주소: https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset
-라이선스: Data files © Original Authors
-게시자가 적은 문구: (Confidential Source) - Use only for educational purposes
-이 수업에서는 교육 목적으로만 사용합니다."""
-st.text_area("교재를 보고 여기에 적습니다", value=출처_기본값, height=170, key="출처")
-st.caption("이 데이터를 올린 사람은 원본 데이터가 어디서 왔는지 밝히지 않았고, 교육 목적으로만 사용하라고 적어 두었습니다. "
-           "이름이나 생년월일이 없어 실제 환자를 찾아낼 수는 없지만, 출처를 알 수 없는 데이터로 얻은 결과를 "
-           "실제 의학적 판단에 사용해서는 안 됩니다.")
+df = load_data()
+
+# -----------------------------
+# 앱 제목 (아이콘 포함)
+# -----------------------------
+st.title("🧠 뇌졸중 예측 실습실")
+st.markdown("뇌졸중(stroke) 데이터를 살펴보고 예측 모델을 만들어보는 실습 공간입니다.")
+
+st.divider()
+
+# -----------------------------
+# 큰 숫자 카드 4개: 전체 인원수, 열 개수, stroke=1 인원수, 비율
+# -----------------------------
+st.subheader("📊 데이터 한눈에 보기")
+
+total_people = len(df)
+total_columns = df.shape[1]
+stroke_count = int(df["stroke"].sum())
+stroke_ratio = stroke_count / total_people * 100
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(label="전체 사람 수", value=f"{total_people:,} 명")
+
+with col2:
+    st.metric(label="열(컬럼) 개수", value=f"{total_columns} 개")
+
+with col3:
+    st.metric(label="뇌졸중(stroke=1) 인원", value=f"{stroke_count:,} 명")
+
+with col4:
+    st.metric(label="뇌졸중 비율", value=f"{stroke_ratio:.2f} %")
+
+st.divider()
+
+# -----------------------------
+# 열 설명 표 만들기
+# 열 이름 / 우리말 뜻(빈칸) / 값의 종류 / 빈 값 개수
+# -----------------------------
+st.subheader("📋 열(컬럼) 설명")
+
+# 각 열의 '값의 종류'를 요약해서 보여주기 위한 함수
+def summarize_values(col):
+    unique_vals = df[col].dropna().unique()
+    # 값 종류가 너무 많으면 (예: id, age, bmi 같은 연속형) 개수만 표시
+    if len(unique_vals) > 10:
+        return f"연속형 값 (고유값 {len(unique_vals)}개)"
+    else:
+        # 값 종류가 적으면 실제 값들을 정렬해서 보여주기
+        try:
+            sorted_vals = sorted(unique_vals)
+        except TypeError:
+            sorted_vals = unique_vals
+        return ", ".join(str(v) for v in sorted_vals)
+
+column_info = pd.DataFrame({
+    "열 이름": df.columns,
+    "우리말 뜻": ["" for _ in df.columns],  # 학생이 직접 채워 넣을 빈 칸
+    "값의 종류": [summarize_values(col) for col in df.columns],
+    "빈 값 개수": [df[col].isnull().sum() for col in df.columns]
+})
+
+st.dataframe(column_info, use_container_width=True, hide_index=True)
+
+st.info("💡 '우리말 뜻' 칸은 교재를 참고해서 직접 채워 넣어 보세요!")
+
+st.divider()
+
+# -----------------------------
+# 데이터 처음 5줄 보여주기
+# -----------------------------
+st.subheader("🔍 데이터 미리보기 (처음 5줄)")
+st.dataframe(df.head(5), use_container_width=True)
+
+st.divider()
+
+# -----------------------------
+# 데이터 출처 (학생이 직접 작성)
+# -----------------------------
+st.subheader("📚 데이터 출처")
+
+source_text = st.text_area(
+    "교재에 나온 데이터 출처를 이곳에 적어보세요.",
+    placeholder="예: 이 데이터는 ○○에서 제공하는 자료이며..."
+)
+
+if source_text:
+    st.success("작성한 출처 내용:")
+    st.write(source_text)
+else:
+    st.warning("아직 출처를 작성하지 않았어요. 위 칸에 입력해보세요!")
